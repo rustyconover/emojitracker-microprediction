@@ -1,6 +1,6 @@
 {
   "name": "emojitracker-microprediction",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A simple lambda function to pull emoji usage from Twitter into Microprediction.org",
   "main": "index.js",
   "scripts": {

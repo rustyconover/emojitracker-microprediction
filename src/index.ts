@@ -1,5 +1,5 @@
 // What this code does is download the latest load information and publishes to microprediction.org
-import { MicroWriter, MicroWriterConfig, MicroReader } from "microprediction";
+import { MicroWriter, MicroWriterConfig } from "microprediction";
 import { emoji_write_keys } from "./write-keys";
 const bent = require("bent");
 
@@ -39,7 +39,7 @@ async function writeOldEmojis(data: EmojiRecord[]) {
   }
 }
 
-async function getOldEmojis(): Promise<EmojiRecord[] | undefined> {
+async function getOldEmojis(): Promise<[Date, EmojiRecord[]] | undefined> {
   const s3 = new S3({ region: "us-east-1" });
   try {
     const result = await s3
@@ -48,8 +48,8 @@ async function getOldEmojis(): Promise<EmojiRecord[] | undefined> {
         Key: "old-emoji.json",
       })
       .promise();
-    if (result.Body) {
-      return JSON.parse(result.Body.toString("utf8"));
+    if (result.LastModified && result.Body) {
+      return [result.LastModified, JSON.parse(result.Body.toString("utf8"))];
     }
     return undefined;
   } catch {
@@ -72,6 +72,18 @@ async function calculateEmojiUsage() {
     return;
   }
 
+  const now = new Date();
+
+  const oldAge = now.getTime() - old[0].getTime();
+
+  if (oldAge > 1000 * 90) {
+    // If the old values are greater than 90 seconds ago
+    // don't push in the current values, just resync on
+    // the next call, this prevents doubling up counts.
+    console.log("Emoji history was too old ${oldAge}, ignoring for now.");
+    return;
+  }
+
   // Now calculate the score differences.
   const current_scores = new Map<string, number>(
     current.map((v) => {
@@ -79,7 +91,7 @@ async function calculateEmojiUsage() {
     })
   );
   const old_scores = new Map<string, number>(
-    old.map((v) => {
+    old[1].map((v) => {
       return [v.name, v.score];
     })
   );
@@ -113,6 +125,7 @@ async function calculateEmojiUsage() {
       console.log("Writing", name, change);
       writes.push(writer.set(`emojitracker-twitter-${name}.json`, change));
     } else {
+      continue;
       // Skip over emoji that don't have a dedicated write key.
       //      console.log(`'${name}': '${keys[key_index++]}',`);
     }
@@ -121,6 +134,5 @@ async function calculateEmojiUsage() {
 }
 
 export const handler: ScheduledHandler<any> = async (event) => {
-  console.log("Fetching data");
   await calculateEmojiUsage();
 };
